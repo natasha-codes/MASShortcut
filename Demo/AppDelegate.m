@@ -82,6 +82,10 @@ static void *MASObservingContext = &MASObservingContext;
         [[MASShortcutBinder sharedBinder] bindShortcutWithDefaultsKey:MASCustomShortcutKey toAction:^{
             [self playShortcutFeedback];
         }];
+        
+        [[MASShortcutMonitor sharedMonitor] registerActionForAllModifierKeysReleased:^{
+            NSLog(@"eat my ass or something");
+        }];
     } else {
         [[MASShortcutBinder sharedBinder] breakBindingWithDefaultsKey:MASCustomShortcutKey];
     }

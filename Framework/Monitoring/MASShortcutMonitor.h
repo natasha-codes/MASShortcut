@@ -24,4 +24,9 @@
 - (void) unregisterShortcut: (MASShortcut*) shortcut;
 - (void) unregisterAllShortcuts;
 
+/**
+ Fires when all modifier keys have been released (that is there are no longer any held down)
+ */
+- (void) registerActionForAllModifierKeysReleased: (dispatch_block_t) action;
+
 @end

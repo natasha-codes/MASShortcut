@@ -4,6 +4,7 @@
 @interface MASShortcutMonitor ()
 @property(assign) EventHandlerRef eventHandlerRef;
 @property(strong) NSMutableDictionary *hotKeys;
+@property(strong) dispatch_block_t allModifierKeysReleasedAction;
 @end
 
 static OSStatus MASCarbonEventCallback(EventHandlerCallRef, EventRef, void*);
@@ -16,12 +17,23 @@ static OSStatus MASCarbonEventCallback(EventHandlerCallRef, EventRef, void*);
 {
     self = [super init];
     [self setHotKeys:[NSMutableDictionary dictionary]];
-    EventTypeSpec hotKeyPressedSpec = { .eventClass = kEventClassKeyboard, .eventKind = kEventHotKeyPressed };
-    OSStatus status = InstallEventHandler(GetEventDispatcherTarget(), MASCarbonEventCallback,
-        1, &hotKeyPressedSpec, (__bridge void*)self, &_eventHandlerRef);
+    
+    EventTypeSpec hotKeyPressedSpec[2] = {
+        { .eventClass = kEventClassKeyboard, .eventKind = kEventHotKeyPressed },
+        { .eventClass = kEventClassKeyboard, .eventKind = kEventRawKeyModifiersChanged }
+    };
+    
+    OSStatus status = InstallEventHandler(GetApplicationEventTarget(),
+                                          MASCarbonEventCallback,
+                                          2,
+                                          hotKeyPressedSpec,
+                                          (__bridge void*)self,
+                                          &_eventHandlerRef);
+
     if (status != noErr) {
         return nil;
     }
+    
     return self;
 }
 
@@ -57,6 +69,11 @@ static OSStatus MASCarbonEventCallback(EventHandlerCallRef, EventRef, void*);
     }
 }
 
+- (void) registerActionForAllModifierKeysReleased: (dispatch_block_t) action
+{
+    _allModifierKeysReleasedAction = action;
+}
+
 - (void) unregisterShortcut: (MASShortcut*) shortcut
 {
     if (shortcut) {
@@ -81,13 +98,38 @@ static OSStatus MASCarbonEventCallback(EventHandlerCallRef, EventRef, void*);
     if (GetEventClass(event) != kEventClassKeyboard) {
         return;
     }
+    
+    if (GetEventKind(event) == kEventRawKeyModifiersChanged && _allModifierKeysReleasedAction) {
+        [self handleAllModifierKeysReleased:event];
+    } else if (GetEventKind(event) == kEventHotKeyPressed) {
+        [self handleHotKeyPressed:event];
+    }
+}
 
+- (void) handleAllModifierKeysReleased: (EventRef) event
+{
+    UInt32 modifierKeys;
+    OSStatus status = GetEventParameter(event, kEventParamKeyModifiers, typeUInt32, NULL, sizeof(modifierKeys), NULL, &modifierKeys);
+    
+    if (status != noErr) {
+        return;
+    }
+    
+    UInt32 cmdCtrlAltOptionMask = cmdKey | optionKey | controlKey;
+    if ((modifierKeys & cmdCtrlAltOptionMask) == 0) {
+        NSLog(@"hooooray! found it!");
+        _allModifierKeysReleasedAction();
+    }
+}
+
+- (void) handleHotKeyPressed: (EventRef) event
+{
     EventHotKeyID hotKeyID;
     OSStatus status = GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID, NULL, sizeof(hotKeyID), NULL, &hotKeyID);
     if (status != noErr || hotKeyID.signature != MASHotKeySignature) {
         return;
     }
-
+    
     [_hotKeys enumerateKeysAndObjectsUsingBlock:^(MASShortcut *shortcut, MASHotKey *hotKey, BOOL *stop) {
         if (hotKeyID.id == [hotKey carbonID]) {
             if ([hotKey action]) {
